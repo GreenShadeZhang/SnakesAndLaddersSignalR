@@ -47,6 +47,14 @@ namespace Server.Hubs
             }
 
             await Clients.All.SendAsync("ReceiveMessage", connectionId, $"允许的总玩家数为：{playerCount.ToString()}");
+
+            var onlinePlayer = playerList.Where(p => p.IsOffLine == false)
+                .Select(p => p.Name).ToList();
+
+            if (onlinePlayer.Count > 0)
+            {
+                await Clients.Client(Context.ConnectionId).SendAsync("ResetPlayerList", onlinePlayer);
+            }
         }
 
 
@@ -61,14 +69,12 @@ namespace Server.Hubs
                 ConnectionId = connectionId,
             };
 
-            var playerData = await _playerService.UpdatePlayerNetworkStatusAsync(player);
+            _ = await _playerService.UpdatePlayerNetworkStatusAsync(player);
         }
-
         /// <summary>
         /// 示例广播代码
         /// </summary>
-        /// <param name="user"></param>
-        /// <param name="message"></param>
+        /// <param name="gameStartData"></param>
         /// <returns></returns>
         public async Task SendMessage(GameStartData gameStartData)
         {
@@ -77,6 +83,20 @@ namespace Server.Hubs
             var connectionId = Context.ConnectionId;
 
             await Clients.All.SendAsync("ReceiveMessage", gameStartData.PlayerName, gameStartData.GameName);
+        }
+
+        /// <summary>
+        /// 聊天代码
+        /// </summary>
+        /// <param name="chatMsg"></param>
+        /// <returns></returns>
+        public async Task ChatMsg(ChatMsg chatMsg)
+        {
+            var playerCount = _gameConfig.Value.PlayerCount;
+
+            var connectionId = Context.ConnectionId;
+
+            await Clients.All.SendAsync("ReceiveMessage", chatMsg.PlayerName, chatMsg.MsgContent);
         }
 
         public async Task StartGame()
@@ -115,6 +135,11 @@ namespace Server.Hubs
                 return;
             }
 
+            if (!string.IsNullOrEmpty(gameStartData.GameName))
+            {
+                _gameService.SetGameName(gameStartData.GameName);
+            }
+
             try
             {
                 var player = new Player
@@ -133,11 +158,18 @@ namespace Server.Hubs
                 await Clients.All.SendAsync("ReceiveMessage", gameStartData.PlayerName, $"出现错误--{ex.Message}");
             }
 
+            var gameName = _gameService.GetGameName();
+
+            await Clients.All.SendAsync("SetGameName", gameName);
+
+            await Clients.AllExcept(Context.ConnectionId).SendAsync("UpdatePlayerList", gameStartData);
+
+            await Clients.Client(Context.ConnectionId).SendAsync("SetCurrentPlayer", gameStartData);
 
             await Clients.All.SendAsync("ReceiveMessage", gameStartData.PlayerName, $"加入游戏--{gameStartData.GameName}");
         }
 
-        public async Task RollDice(string user, string message)
+        public async Task RollDice(string user)
         {
             var data = _gameService.RollDice(user);
 
